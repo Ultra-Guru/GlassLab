@@ -52,6 +52,9 @@ const glassConfigSchema = z.object({
   frost: z.number().min(0).max(1).default(0),
   edgeBlur: z.number().min(0).max(1).default(0),
   vignette: z.number().min(0).max(1).default(0),
+  // Phase 7 lens field (shuding/liquid-glass + Kyant0 backdrop) — default
+  // keeps pre-Phase-7 payloads (older clients and stored rows) valid.
+  lensing: z.number().min(0).max(1).default(0),
 })
 
 const createPresetSchema = z.object({

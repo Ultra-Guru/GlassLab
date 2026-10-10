@@ -6,6 +6,11 @@
  * Phase 2: the library doubled to 24 curated styles, organized into four
  * categories (经典 / 材质 / 光影 / 创意), with a new `lightAngle` engine
  * parameter controlling the direction of the fresnel rim highlight.
+ *
+ * Phase 7: algorithm fusion with the wider liquid-glass ecosystem — a new
+ * `lensing` engine parameter (shuding/liquid-glass convex-lens field +
+ * Kyant0 backdrop `lens()`) and a fifth category 动态 with Apple iOS 26
+ * Regular/Clear replicas, shuding's demo capsule and rdev jelly styles.
  */
 
 export interface GlassConfig {
@@ -43,11 +48,21 @@ export interface GlassConfig {
   edgeBlur: number
   /** Phase 5: radial corner darkening (vignette), 0..1 */
   vignette: number
+  /** Phase 7: convex-lens magnification field, 0..1 (shuding lens /
+   *  Kyant0 backdrop `lens()`) — pulls backdrop samples towards the center
+   *  deep inside the glass, fading to zero at the optical center. */
+  lensing: number
 }
 
-export type GlassCategory = '经典' | '材质' | '光影' | '创意'
+export type GlassCategory = '经典' | '材质' | '光影' | '创意' | '动态'
 
-export const CATEGORIES: readonly GlassCategory[] = ['经典', '材质', '光影', '创意']
+export const CATEGORIES: readonly GlassCategory[] = [
+  '经典',
+  '材质',
+  '光影',
+  '创意',
+  '动态',
+]
 
 export interface GlassPreset {
   id: string
@@ -78,6 +93,7 @@ export const DEFAULT_CONFIG: GlassConfig = {
   frost: 0,
   edgeBlur: 0,
   vignette: 0,
+  lensing: 0,
 }
 
 export const PRESETS: GlassPreset[] = [
@@ -577,6 +593,125 @@ export const PRESETS: GlassPreset[] = [
       highlight: 1,
       glow: 'rgba(163,230,53,0.35)',
       lightAngle: 90,
+    },
+  },
+
+  // ------------------------------ 动态（Phase 7 生态融合） ------------------------------
+  {
+    id: 'apple-regular',
+    name: 'Apple 26 正装',
+    desc: 'iOS 26 Regular 材质复刻',
+    swatch: 'linear-gradient(135deg,#f8fafc,#cbd5e1,#f1f5f9)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 30,
+      height: 44,
+      dispersion: 0.3,
+      blur: 3,
+      saturation: 130,
+      cornerRadius: 26,
+      highlight: 0.9,
+      tintOpacity: 0.1,
+      lensing: 0.15,
+    },
+  },
+  {
+    id: 'apple-clear',
+    name: 'Apple Clear',
+    desc: 'iOS 26 透明材质，需富媒体背景',
+    swatch: 'linear-gradient(135deg,#f1f5f9,#e2e8f0,#94a3b8)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 36,
+      height: 50,
+      dispersion: 0.35,
+      blur: 1.5,
+      saturation: 125,
+      cornerRadius: 22,
+      tintOpacity: 0.03,
+      highlight: 0.95,
+      lensing: 0.22,
+    },
+  },
+  {
+    id: 'lens-shuding',
+    name: 'shuding 透镜',
+    desc: 'shuding/liquid-glass 胶囊凸透镜',
+    swatch: 'radial-gradient(circle at 50% 40%,#fef9c3,#fde047,#65a30d)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 22,
+      height: 30,
+      dispersion: 0.15,
+      blur: 0.5,
+      saturation: 115,
+      cornerRadius: 999,
+      highlight: 0.8,
+      lensing: 0.85,
+    },
+  },
+  {
+    id: 'jelly',
+    name: '果冻胶囊',
+    desc: 'rdev 弹性果冻质感',
+    swatch: 'linear-gradient(135deg,#fda4af,#f472b6,#c084fc)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 35,
+      height: 42,
+      dispersion: 0.2,
+      blur: 6,
+      saturation: 140,
+      cornerRadius: 999,
+      tintOpacity: 0.06,
+      highlight: 0.95,
+      lensing: 0.3,
+      glow: 'rgba(255,255,255,0.1)',
+    },
+  },
+  {
+    id: 'depth-well',
+    name: '凹陷纵深',
+    desc: 'Kyant0 backdrop 深度透镜',
+    swatch: 'radial-gradient(circle at 50% 50%,#0f172a 20%,#334155 60%,#94a3b8)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 34,
+      height: 56,
+      dispersion: 0.4,
+      blur: 2,
+      saturation: 135,
+      cornerRadius: 24,
+      depthEffect: true,
+      tint: '#0f172a',
+      tintOpacity: 0.12,
+      highlight: 0.85,
+      lensing: 0.5,
+    },
+  },
+  {
+    id: 'specular-flow',
+    name: '流光棱面',
+    desc: 'rdev 流光边框 + 折射',
+    swatch: 'conic-gradient(from 0deg,#f0abfc,#fde68a,#5eead4,#f0abfc)',
+    category: '动态',
+    config: {
+      ...DEFAULT_CONFIG,
+      refraction: 30,
+      height: 46,
+      dispersion: 0.6,
+      blur: 1,
+      saturation: 155,
+      cornerRadius: 20,
+      highlight: 1,
+      lightAngle: 315,
+      lensing: 0.35,
+      glow: 'rgba(240,171,252,0.28)',
     },
   },
 ]

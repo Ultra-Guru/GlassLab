@@ -184,6 +184,7 @@ type NumericKey = keyof Pick<
   | 'frost'
   | 'edgeBlur'
   | 'vignette'
+  | 'lensing'
 >
 
 const PARAM_ROWS: {
@@ -195,6 +196,7 @@ const PARAM_ROWS: {
   fmt: (v: number) => string
 }[] = [
   { key: 'refraction', label: '折射强度', min: 0, max: 80, step: 1, fmt: v => `${v}px` },
+  { key: 'lensing', label: '透镜化', min: 0, max: 1, step: 0.05, fmt: v => `${Math.round(v * 100)}%` },
   { key: 'height', label: '玻璃厚度', min: 4, max: 90, step: 1, fmt: v => `${v}px` },
   { key: 'dispersion', label: '光谱色散', min: 0, max: 1, step: 0.01, fmt: v => `${Math.round(v * 100)}%` },
   { key: 'blur', label: '背景模糊', min: 0, max: 30, step: 0.5, fmt: v => `${v}px` },
@@ -234,6 +236,7 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
  *  results always look reasonable and always save successfully. */
 const RANDOM_RANGES: Record<NumericKey, [number, number]> = {
   refraction: [20, 70],
+  lensing: [0, 0.5],
   height: [10, 70],
   dispersion: [0, 0.5],
   blur: [2, 20],
@@ -1261,7 +1264,7 @@ export function GlassLab() {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[10px] font-medium text-teal-600 sm:inline-block">
-              Phase 6 · 快照导出与预设互通进行中
+              Phase 7 · 透镜化引擎与交互高光
             </span>
             {sessionStatus === 'loading' ? (
               <div className="h-8 w-20 animate-pulse rounded-lg bg-muted" aria-hidden />
@@ -2034,7 +2037,7 @@ export function GlassLab() {
             </a>{' '}
             (Apache-2.0)
           </span>
-          <span>第六阶段 · PNG 快照导出 / 预设视图筛选 / 配置文件导入导出</span>
+          <span>第七阶段 · 液态玻璃生态融合：Kyant0 折射 + shuding 透镜 + rdev 交互高光</span>
         </div>
       </footer>
     </div>

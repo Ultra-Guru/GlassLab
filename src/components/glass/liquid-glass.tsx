@@ -9,6 +9,18 @@
  *   2. an SVG filter chain: feImage -> feDisplacementMap (x3 spectral taps)
  *      -> feGaussianBlur -> feColorMatrix(saturate)
  *   3. a CSS fresnel rim highlight (Kyant0: HighlightStyle.Default, 45°)
+ *
+ * Phase 7 — algorithm fusion with the wider liquid-glass ecosystem:
+ *
+ * - Dynamic displacement-map normalization + lens field from
+ *   shuding/liquid-glass (see displacement-map.ts for the math).
+ * - Interactive layer from rdev/liquid-glass-react + Kyant0 backdrop's
+ *   InteractiveHighlight: pointer-following fresnel rim (gradient rotates
+ *   and brightens towards the cursor) and a soft press glow emitted from the
+ *   touch point. Both are gated behind the `interactive` prop.
+ * - Apple accessibility switches: `prefers-reduced-motion` freezes the
+ *   interactive layer, `prefers-reduced-transparency` deepens tint/frost so
+ *   content stays readable (WWDC25: "reduce transparency -> more frosty").
  */
 
 import {
@@ -21,7 +33,10 @@ import {
   useState,
 } from 'react'
 import { withAlpha } from '@/lib/glass/color'
-import { renderDisplacementMap } from '@/lib/glass/displacement-map'
+import {
+  renderDisplacementMap,
+  type BakedDisplacementMap,
+} from '@/lib/glass/displacement-map'
 import type { GlassConfig } from '@/lib/glass/presets'
 
 export interface LiquidGlassProps {
@@ -33,6 +48,13 @@ export interface LiquidGlassProps {
   mapScale?: number
   /** Disable refraction entirely (cheap mode) */
   disabled?: boolean
+  /**
+   * Phase 7: pointer-reactive layer — fresnel rim follows the cursor and a
+   * glow blooms from the press point (rdev/liquid-glass-react + Kyant0
+   * InteractiveHighlight). Automatically disabled under
+   * prefers-reduced-motion.
+   */
+  interactive?: boolean
 }
 
 /** True when the browser supports SVG-filter references in backdrop-filter. */
@@ -51,6 +73,28 @@ function supportsSvgBackdrop(): boolean {
   )
 }
 
+function rimGradient(
+  angleDeg: number,
+  highlight: number,
+  nx: number,
+  ny: number
+): string {
+  // rdev/liquid-glass-react rim math: cursor offsets rotate the gradient and
+  // brighten the facing stops, so the "light source" appears to track the
+  // pointer around the rim.
+  const angle = ((angleDeg + nx * 14) % 360 + 360) % 360
+  const boost = 1 + Math.min(1, Math.hypot(nx, ny)) * 0.3
+  const a = (v: number) => (v * boost).toFixed(3)
+  const s1 = Math.max(4, Math.min(46, 28 + ny * 6))
+  const s2 = Math.max(54, Math.min(96, 72 + ny * 8))
+  return `linear-gradient(${angle.toFixed(1)}deg,
+    rgba(255,255,255,${a(0.75 * highlight)}) 0%,
+    rgba(255,255,255,${a(0.18 * highlight)}) ${s1.toFixed(1)}%,
+    rgba(255,255,255,${a(0.02 * highlight)}) 50%,
+    rgba(255,255,255,${a(0.10 * highlight)}) ${s2.toFixed(1)}%,
+    rgba(255,255,255,${a(0.45 * highlight)}) 100%)`
+}
+
 function LiquidGlassImpl({
   config,
   children,
@@ -58,6 +102,7 @@ function LiquidGlassImpl({
   style,
   mapScale = 2,
   disabled = false,
+  interactive = false,
 }: LiquidGlassProps) {
   const rawId = useId().replace(/[^a-zA-Z0-9]/g, '')
   const filterId = `lg-${rawId}`
@@ -74,13 +119,34 @@ function LiquidGlassImpl({
   const noiseId = `nz-${rawId}`
 
   const hostRef = useRef<HTMLDivElement>(null)
+  const rimRef = useRef<HTMLDivElement>(null)
+  const glowRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  const [mapUrl, setMapUrl] = useState('')
+  const [baked, setBaked] = useState<BakedDisplacementMap | null>(null)
   const [svgOk, setSvgOk] = useState(true)
+  // Apple accessibility switches (matchMedia-driven).
+  const [reducedMotion, setReducedMotion] = useState(false)
+  const [reducedTransparency, setReducedTransparency] = useState(false)
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setSvgOk(supportsSvgBackdrop()))
     return () => cancelAnimationFrame(raf)
+  }, [])
+
+  useEffect(() => {
+    const mqMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const mqTrans = window.matchMedia('(prefers-reduced-transparency: reduce)')
+    const sync = () => {
+      setReducedMotion(mqMotion.matches)
+      setReducedTransparency(mqTrans.matches)
+    }
+    sync()
+    mqMotion.addEventListener('change', sync)
+    mqTrans.addEventListener('change', sync)
+    return () => {
+      mqMotion.removeEventListener('change', sync)
+      mqTrans.removeEventListener('change', sync)
+    }
   }, [])
 
   // Observe the element size so the displacement map always matches.
@@ -102,26 +168,28 @@ function LiquidGlassImpl({
     return () => ro.disconnect()
   }, [])
 
-  // Bake the Kyant0 displacement vector field (rAF-debounced).
+  // Bake the Kyant0 (+ shuding lens) displacement vector field, dynamically
+  // normalized to the full 8-bit range (rAF-debounced).
   useEffect(() => {
     let raf = 0
     let cancelled = false
     const bake = () => {
       raf = 0
       if (size.w < 4 || size.h < 4 || disabled) {
-        setMapUrl('')
+        setBaked(null)
         return
       }
-      const url = renderDisplacementMap({
+      const bakedMap = renderDisplacementMap({
         width: size.w,
         height: size.h,
         cornerRadius: config.cornerRadius,
         refractionHeight: config.height,
         refractionAmount: config.refraction,
         depthEffect: config.depthEffect,
+        lensing: config.lensing ?? 0,
         scale: mapScale,
       })
-      if (!cancelled) setMapUrl(url)
+      if (!cancelled) setBaked(bakedMap)
     }
     raf = requestAnimationFrame(bake)
     return () => {
@@ -135,6 +203,7 @@ function LiquidGlassImpl({
     config.height,
     config.refraction,
     config.depthEffect,
+    config.lensing,
     mapScale,
     disabled,
   ])
@@ -155,19 +224,31 @@ function LiquidGlassImpl({
   )
 
   // ---------- SVG filter chain ----------
-  const scale = Math.max(0.001, config.refraction * 2)
+  // With dynamic normalization the decode scale comes from the baked map
+  // itself (2 * maxAbs / renderScale) instead of a fixed 2 * refraction, so
+  // rim refraction and the lens field share the full 8-bit precision.
+  const dispScale = Math.max(0.001, baked?.maxScale ?? config.refraction * 2)
   const k = Math.max(0, Math.min(1, config.dispersion))
   const useDispersion = k > 0.01
-  const blurReady = mapUrl !== '' && size.w > 4
+  const blurReady = baked !== null && size.w > 4
   const active = !disabled && svgOk && blurReady
+
+  // Apple accessibility: reduced transparency deepens the tint/frost floors
+  // (and the fallback blur) so content stays readable on any backdrop.
+  const tintOpacityEff = reducedTransparency
+    ? Math.max(config.tintOpacity, 0.38)
+    : config.tintOpacity
+  const fallbackBlur = reducedTransparency
+    ? Math.max(config.blur, 12)
+    : Math.max(config.blur, 8)
 
   const backdropFilter = active
     ? `url(#${filterId})`
-    : `blur(${Math.max(config.blur, 8)}px) saturate(${config.saturation}%)`
+    : `blur(${fallbackBlur}px) saturate(${config.saturation}%)`
 
-  const tintRgba = useMemo(() => withAlpha(config.tint, config.tintOpacity), [
+  const tintRgba = useMemo(() => withAlpha(config.tint, tintOpacityEff), [
     config.tint,
-    config.tintOpacity,
+    tintOpacityEff,
   ])
 
   // Fresnel rim highlight — Kyant0 HighlightStyle.Default (plus-blend).
@@ -181,8 +262,9 @@ function LiquidGlassImpl({
     ((Math.round(Number.isFinite(config.lightAngle) ? config.lightAngle : 45) % 360) + 360) % 360
   const rimAngle = overLight ? (lightAngleDeg + 90) % 360 : lightAngleDeg
 
-  // ---- Phase 5 layered effects ----
+  // Phase 5 layered effects
   const frost = Math.max(0, Math.min(1, config.frost ?? 0))
+  const frostEff = reducedTransparency ? Math.max(frost, 0.35) : frost
   const edgeBlur = Math.max(0, Math.min(1, config.edgeBlur ?? 0))
   const vignette = Math.max(0, Math.min(1, config.vignette ?? 0))
   // Frosted grain: feTurbulence -> white grain w/ noise-derived alpha.
@@ -191,11 +273,65 @@ function LiquidGlassImpl({
   const edgeBand = Math.round(6 + edgeBlur * 22)
   const edgeBlurPx = (edgeBlur * 26).toFixed(1)
 
+  // Phase 7 interactive layer: base rim gradient is synced to a ref so
+  // pointer handlers can restore it without a React re-render per frame.
+  const rimBase = useMemo(
+    () => rimGradient(rimAngle, highlight, 0, 0),
+    [rimAngle, highlight]
+  )
+  const rimStyleRef = useRef(rimBase)
+  useEffect(() => {
+    rimStyleRef.current = rimBase
+  }, [rimBase])
+
+  const interactiveOn = interactive && !reducedMotion
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!interactiveOn || !rimRef.current) return
+      const el = rimRef.current
+      const rect = e.currentTarget.getBoundingClientRect()
+      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
+      el.style.background = rimGradient(rimAngle, highlight, nx, ny)
+    },
+    [interactiveOn, rimAngle, highlight]
+  )
+
+  const handlePointerLeave = useCallback(() => {
+    if (!rimRef.current) return
+    rimRef.current.style.background = rimStyleRef.current
+    if (glowRef.current) glowRef.current.style.opacity = '0'
+  }, [])
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Kyant0 InteractiveHighlight: a glow blooms from the press point.
+      if (!interactiveOn || !glowRef.current) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = ((e.clientX - rect.left) / rect.width) * 100
+      const y = ((e.clientY - rect.top) / rect.height) * 100
+      const radius = Math.max(rect.width, rect.height) * 1.1
+      const glow = glowRef.current
+      glow.style.background = `radial-gradient(circle ${radius.toFixed(0)}px at ${x.toFixed(1)}% ${y.toFixed(1)}%, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 45%, transparent 72%)`
+      glow.style.opacity = '1'
+    },
+    [interactiveOn]
+  )
+
+  const handlePointerUp = useCallback(() => {
+    if (glowRef.current) glowRef.current.style.opacity = '0'
+  }, [])
+
   return (
     <div
       ref={hostRef}
       className={`relative ${className ?? ''}`}
       style={style}
+      onPointerMove={interactiveOn ? handlePointerMove : undefined}
+      onPointerDown={interactiveOn ? handlePointerDown : undefined}
+      onPointerUp={interactiveOn ? handlePointerUp : undefined}
+      onPointerLeave={interactiveOn ? handlePointerLeave : undefined}
     >
       {/* Filter defs — must stay mounted for backdrop-filter url() refs */}
       <svg
@@ -206,7 +342,7 @@ function LiquidGlassImpl({
         style={{ position: 'absolute', pointerEvents: 'none' }}
       >
         <defs>
-          {frost > 0.01 && (
+          {frostEff > 0.01 && (
             <filter id={noiseId} x="0" y="0" width="100%" height="100%">
               <feTurbulence
                 type="fractalNoise"
@@ -234,7 +370,7 @@ function LiquidGlassImpl({
             {blurReady && (
               <feImage
                 id={mapId}
-                href={mapUrl}
+                href={baked?.url}
                 x={0}
                 y={0}
                 width={size.w}
@@ -250,7 +386,7 @@ function LiquidGlassImpl({
                   id={dispGId}
                   in="SourceGraphic"
                   in2="map"
-                  scale={scale}
+                  scale={dispScale}
                   xChannelSelector="R"
                   yChannelSelector="G"
                   result="disp"
@@ -278,7 +414,7 @@ function LiquidGlassImpl({
                   id={dispRId}
                   in="SourceGraphic"
                   in2="map"
-                  scale={scale * (1 + k * 0.5)}
+                  scale={dispScale * (1 + k * 0.5)}
                   xChannelSelector="R"
                   yChannelSelector="G"
                   result="dispR"
@@ -294,7 +430,7 @@ function LiquidGlassImpl({
                   id={dispGId}
                   in="SourceGraphic"
                   in2="map"
-                  scale={scale}
+                  scale={dispScale}
                   xChannelSelector="R"
                   yChannelSelector="G"
                   result="dispG"
@@ -310,7 +446,7 @@ function LiquidGlassImpl({
                   id={dispBId}
                   in="SourceGraphic"
                   in2="map"
-                  scale={scale * (1 - k * 0.5)}
+                  scale={dispScale * (1 - k * 0.5)}
                   xChannelSelector="R"
                   yChannelSelector="G"
                   result="dispB"
@@ -347,7 +483,7 @@ function LiquidGlassImpl({
         style={{
           ...radiusStyle(),
           backdropFilter,
-          WebkitBackdropFilter: `blur(${Math.max(config.blur, 8)}px) saturate(${config.saturation}%)`,
+          WebkitBackdropFilter: `blur(${fallbackBlur}px) saturate(${config.saturation}%)`,
           willChange: 'backdrop-filter',
           // Outer glow via box-shadow (a host-level `filter` would turn the
           // host into a backdrop root and break the refraction sampling).
@@ -359,14 +495,14 @@ function LiquidGlassImpl({
       />
 
       {/* Tint */}
-      {config.tintOpacity > 0 && (
+      {tintOpacityEff > 0 && (
         <div
           aria-hidden
           className="absolute inset-0"
           style={{
             ...radiusStyle(),
             background: overLight
-              ? `rgba(15, 18, 25, ${Math.max(0.35, config.tintOpacity)})`
+              ? `rgba(15, 18, 25, ${Math.max(0.35, tintOpacityEff)})`
               : tintRgba,
           }}
         />
@@ -407,14 +543,29 @@ function LiquidGlassImpl({
       )}
 
       {/* Phase 5: frosted grain overlay */}
-      {frost > 0.01 && (
+      {frostEff > 0.01 && (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             ...radiusStyle(),
             filter: `url(#${noiseId})`,
-            opacity: (frost * 0.5).toFixed(3),
+            opacity: (frostEff * 0.5).toFixed(3),
+          }}
+        />
+      )}
+
+      {/* Phase 7: press glow — blooms from the pointer-down point (Kyant0
+          InteractiveHighlight). Plain rgba overlay, no blend mode: a blended
+          sibling would isolate the backdrop root and blank the refraction. */}
+      {interactiveOn && (
+        <div
+          ref={glowRef}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 transition-opacity duration-300 ease-out"
+          style={{
+            ...radiusStyle(),
+            opacity: 0,
           }}
         />
       )}
@@ -422,17 +573,13 @@ function LiquidGlassImpl({
       {/* Fresnel rim highlight (gradient ring via mask composite) */}
       {highlight > 0.01 && (
         <div
+          ref={rimRef}
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             ...radiusStyle(),
             padding: ringPad,
-            background: `linear-gradient(${rimAngle}deg,
-              rgba(255,255,255,${0.75 * highlight}) 0%,
-              rgba(255,255,255,${0.18 * highlight}) 28%,
-              rgba(255,255,255,${0.02 * highlight}) 50%,
-              rgba(255,255,255,${0.10 * highlight}) 72%,
-              rgba(255,255,255,${0.45 * highlight}) 100%)`,
+            background: rimBase,
             WebkitMask:
               'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
             WebkitMaskComposite: 'xor',

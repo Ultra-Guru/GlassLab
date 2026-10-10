@@ -76,7 +76,7 @@ export function GlassDemoCard({ config, dark }: DemoCardProps) {
   )
 
   return (
-    <LiquidGlass config={config} className="w-[320px] max-w-full select-none">
+    <LiquidGlass config={config} interactive className="w-[320px] max-w-full select-none">
       <div className={`flex h-full flex-col gap-4 p-5 ${text}`} data-testid="glass-demo-card">
         {/* Clock */}
         <div className="flex items-start justify-between">
@@ -191,7 +191,7 @@ export function GlassPill({
   dark?: boolean
 }) {
   return (
-    <LiquidGlass config={config} className="select-none">
+    <LiquidGlass config={config} interactive className="select-none">
       <div
         className={`flex items-center gap-2 px-4 py-2 text-xs font-medium ${
           dark ? 'text-white' : 'text-foreground'

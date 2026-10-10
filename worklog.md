@@ -278,3 +278,23 @@ Stage Summary:
 - 依冲突裁决规则维持既有实现：GIF89a 魔数文本接受（#60 设计范围）、stale JWT 写入降级游客（Phase 3 设计）、徽章/chips 仅登录态（M2 设计）
 - 沉淀陷阱：①find --name 子串匹配会命中同名前缀 tab（「我的」→「我的预设」）， chips 断言必须 data-testid；②Radix Tabs 非激活 tabpanel 整体卸载，跨 tab 探针前必须显式切 tab；③CDP 键盘通道会间歇丢键（60 连按仅部分生效、keydown 到达但值不变），对照指针路径可排除应用回归；④agent-browser open 同 origin hash-only URL 不重载页面，深载入断言需 about:blank 中转；⑤hook URL.createObjectURL 是捕获下载产物的可靠手段（1781KB PNG/349B JSON 逐字节可读）
 - GitHub 产物：issues #68–#72 全闭环（报告回帖+Project Done）、repo 无新提交（0 bug 无代码变更）、CI 无触发
+
+---
+Task ID: 13
+Agent: Z.ai Code (main agent)
+Task: 第七阶段——液态玻璃生态融合：shuding 动态归一化 + 透镜化引擎 / rdev 交互高光 / Apple 无障碍 / 「动态」预设分类
+
+Work Log:
+- 生态调研（子代理一手源码抓取）：shuding/liquid-glass（SDF 位移贴图 + maxScale 动态归一化 + 可编程 fragment）、rdev/liquid-glass-react（三层 DOM + 3×feDisplacementMap 色散 + 双环鼠标高光 + 弹性形变 + overLight 双黑层）、Kyant0 backdrop master（circleMap 圆弧剖面 / depthEffect 径向纵深 / 7-tap 光谱色散 / InteractiveHighlight 按压光晕 / AdaptiveLuminance 5×5 采样）、Apple WWDC25《Meet Liquid Glass》（Regular/Clear 双材质、尺寸→厚度、交互=调制 lensing、无障碍三开关）——产出差异化矩阵与 12 条移植点清单（按性价比排序）
+- 引擎层（displacement-map.ts 重写）：①位移贴图动态归一化——Pass1 Float32 场扫描真实 maxAbs，Pass2 按 maxAbs 编码 8bit，feDisplacementMap scale=2·maxAbs/renderScale 由 BakedDisplacementMap 返回（消除 rim+lens 叠加时的 8bit 裁剪/色带，实测 3 实例 base scale 51.4/54.8/54.8 均为真实采样极值）；②lens 凸透镜场——smoothstep 衰减的中心拉扯向量 `-(pos/half)·lensAmp·fall`，lensBand=62% min-half，与 rim 折射场叠加；单遍求值无重复 SDF 计算
+- 组件层（liquid-glass.tsx）：接入 BakedDisplacementMap；新增 interactive prop——pointermove 驱动菲涅尔 rim 渐变旋转 ±14°·停靠点 ±6/8%·增亮 1.3×（rdev 公式，rAF 内直接 style 写入零重渲染，pointerleave 恢复基准），pointerdown 从触点绽放 radial 白色辉光（300ms 弹出/衰减，Kyant0 InteractiveHighlight；刻意不用 mix-blend-mode 防孤立 backdrop root）；matchMedia 接入 prefers-reduced-motion（冻结交互层）与 prefers-reduced-transparency（tint≥0.38/frost≥0.35/fallback blur≥12px，Apple "more frosty"）
+- 预设层：GlassConfig 新增 lensing(0..1, default 0)；CATEGORIES 增第五分类「动态」；新增 6 款——Apple 26 正装 / Apple Clear / shuding 透镜(lensing 0.85 胶囊) / 果冻胶囊(rdev) / 凹陷纵深(depthEffect+lensing) / 流光棱面，库 26→32 款
+- 全链路接线：API zod lensing default 0（旧载荷兼容）/ validateConfigObject numKeys / PARAM_ROWS（透镜化滑杆紧随折射强度）/ RANDOM_RANGES [0,0.5] / CSS 导出透镜化 JS 引擎警告注释 / README 第七阶段生态融合矩阵 / Header 徽章与 Footer 第七阶段文案 / 演示卡+胶囊启用 interactive
+- lint 一次失败即修：react-hooks/refs 禁止渲染期写 ref → rimStyleRef 同步移入 useEffect
+- E2E（agent-browser, 3100 端口）：32 款预设+5 分类 chips+「动态」过滤 6 款全出；shuding 透镜应用后滑杆 13 键逐值正确、主实例 dispScale 51.4→96.6~104.4（透镜场正确扩容）、色散三路 1.075± 精确；交互层实测 rim 角度 45°→56.8°(右下)→33.2°(左下)→leave 恢复 45°、按压辉光 opacity 1→0；Ctrl+Z/Y 撤销重做 lensing 0.85↔0；导出 CSS 含「透镜化 85% 需 JS 引擎」警告、JSON 18 键含 lensing、分享链接 374+ 字符深载入逐值还原；API 矩阵 lensing:0.6→201 / 旧载荷缺省→201(lensing 补 0) / lensing:5→400；随机灵感 lensing=0.49∈[0,0.5]；390px 零溢出 footer 自然推底；截图目检透镜放大效果（时钟凸透镜形变明显）；dev.log 零运行时错误；探针数据（lens-zod-probe/legacy-probe）已级联清理
+
+Stage Summary:
+- 第七阶段生态融合闭环：引擎（动态归一化+lens 场）/交互（指针高光+按压辉光）/无障碍（双 prefers 开关）/预设（+6 款「动态」）四线并进，风格库 26→32 款
+- 关键决策：位移贴图返回 {url,maxScale} 契约（替代固定 2×refraction scale）；lens 场与 rim 场加性叠加共享归一化精度；交互层全部零 mix-blend-mode（引擎注释已论证 backdrop root 隔离风险）；reduced-transparency 只加深 tint/frost/回退模糊不动折射
+- 沉淀陷阱：①React 19 react-hooks/refs 新规——渲染期同步 ref 违规，须移入 useEffect；②agent-browser find text 子串匹配会命中样式库卡片前缀；③eval 内 c.className 在 SVG/宿主元素上可能非 string，getattribute('class') 才可靠；④位移贴图像素网格采样使真实 maxAbs 略低于理论值（51.4 vs 56）——动态归一化恰好修正该精度损失
+- repo 推进至 Phase 7 提交（lint/tsc 双绿），CI 四阶段验证中

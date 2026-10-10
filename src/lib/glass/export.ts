@@ -37,6 +37,14 @@ function cssBody(config: GlassConfig): string {
     frost > 0.01
       ? `\n\n/* 磨砂噪点 ${Math.round(frost * 100)}%（SVG feTurbulence，零 JS） */\n.liquid-glass::after {\n  content: "";\n  position: absolute;\n  inset: 0;\n  border-radius: inherit;\n  pointer-events: none;\n  opacity: ${(frost * 0.5).toFixed(3)};\n  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.34 0.34 0.34 0 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");\n  background-size: 180px 180px;\n}`
       : ''
+  // Phase 7: the lens field (shuding/liquid-glass magnification) lives in the
+  // canvas-baked displacement map and cannot be expressed in pure CSS — the
+  // header comment already notes the JS engine requirement; call it out
+  // explicitly whenever a non-zero lensing value would silently degrade.
+  const lensNote =
+    (config.lensing ?? 0) > 0.01
+      ? `\n/* ⚠ 透镜化 ${Math.round((config.lensing ?? 0) * 100)}% 需 JS 引擎（canvas 位移贴图 + feDisplacementMap），纯 CSS 无法复现 */`
+      : ''
 
   return `/* 生成自 GlassLab 玻璃实验室 — https://github.com/AceGuru-bjx/GlassLab
  * 说明：blur/saturate/染色/边缘高光/磨砂噪点/暗角为纯 CSS；
@@ -68,7 +76,7 @@ function cssBody(config: GlassConfig): string {
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
-}${frostLayer}`
+}${frostLayer}${lensNote}`
 }
 
 /** Standalone CSS export. */
@@ -166,6 +174,7 @@ export function validateConfigObject(raw: unknown): GlassConfig | null {
     'frost',
     'edgeBlur',
     'vignette',
+    'lensing',
   ] as const
   for (const k of numKeys) {
     const v = Number(merged[k])
